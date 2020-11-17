@@ -94,6 +94,7 @@ class Annotator():
 
     def label_mentions(self, text):
         sample = self.extract_mentions(text)
+        spans = sample['spans']
         idxs_arr, aliases_to_predict_per_split, spans_arr, phrase_tokens_arr = sentence_utils.split_sentence(
             max_aliases=self.args.data_config.max_aliases,
             phrase=sample['sentence'],
@@ -159,10 +160,11 @@ class Annotator():
             probs = torch.exp(eval_utils.masked_class_logsoftmax(pred=outs[DISAMBIG][FINAL_LOSS],
                                                                  mask=~entity_pack.mask, dim=2))
             max_probs, max_probs_indices = probs.max(2)
-
             pred_cands = []
             pred_probs = []
             titles = []
+            start_indices = []
+            end_indices = []
             for alias_idx in range(len(aliases)):
                 pred_idx = max_probs_indices[0][alias_idx]
                 pred_prob = max_probs[0][alias_idx].item()
@@ -170,6 +172,15 @@ class Annotator():
                 if pred_prob > self.threshold:
                     pred_cands.append(pred_qid)
                     pred_probs.append(pred_prob)
+                    # Use NIL (Not in List) for No Candidate
                     titles.append(self.entity_db.get_title(pred_qid) if pred_qid != 'NC' else 'NC')
+                    # TODO: this can't depend on spans if we support windowing
+                    # spans are used instead of example_aliases_locs to map back to original word indices (rather thans bert tokens)
+                    start_indices.append(spans[alias_idx][0])
+                    end_indices.append(spans[alias_idx][1])
 
-            return pred_cands, pred_probs, titles
+            return {"qids": pred_cands,
+                    "probs": pred_probs,
+                    "entities": titles,
+                    "start": start_indices,
+                    "end": end_indices}
